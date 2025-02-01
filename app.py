@@ -52,16 +52,19 @@ def get_sessions():
 def get_session_name(session_id):
     sessions = get_sessions()
     for session in sessions:
-        if session['id'] == session_id:
+        if session['id'] == str(session_id):
             return session['name']
     return ''
 
 def get_session_price(session_id):
-    sessions = get_sessions()
-    for session in sessions:
-        if session['id'] == session_id:
-            return float(session['price'])
-    return 0.0
+    try:
+        sessions = get_sessions()
+        for session in sessions:
+            if session['id'] == str(session_id):
+                return float(session['price'])
+        return 0.0
+    except (KeyError, ValueError):
+        return 0.0
 
 def add_participant(name, email, session):
     participant_id = len(get_participants()) + 1
@@ -168,19 +171,28 @@ def generate_certificate(name, session_name, date):
     draw.rectangle([(40, 40), (width-40, height-40)], outline='#4F46E5', width=3)
     draw.rectangle([(50, 50), (width-50, height-50)], outline='#4F46E5', width=1)
     
+    try:
+        # Try to use a nicer font if available
+        font_large = ImageFont.truetype("arial.ttf", 48)
+        font_medium = ImageFont.truetype("arial.ttf", 36)
+        font_small = ImageFont.truetype("arial.ttf", 24)
+    except:
+        # Fallback to default font
+        font_large = ImageFont.load_default()
+        font_medium = ImageFont.load_default()
+        font_small = ImageFont.load_default()
+    
     # Add text
-    # Note: In a production environment, you should have proper font files
-    # For this example, we'll use basic text
-    draw.text((width/2, 150), 'Certificate of Completion', fill='#1F2937', anchor='mm', font=ImageFont.load_default())
-    draw.text((width/2, 250), 'This certifies that', fill='#4B5563', anchor='mm', font=ImageFont.load_default())
-    draw.text((width/2, 300), name, fill='#1F2937', anchor='mm', font=ImageFont.load_default())
-    draw.text((width/2, 350), 'has successfully completed', fill='#4B5563', anchor='mm', font=ImageFont.load_default())
-    draw.text((width/2, 400), session_name, fill='#1F2937', anchor='mm', font=ImageFont.load_default())
-    draw.text((width/2, 500), f'Date: {date}', fill='#4B5563', anchor='mm', font=ImageFont.load_default())
+    draw.text((width/2, 150), 'Certificate of Completion', fill='#1F2937', anchor='mm', font=font_large)
+    draw.text((width/2, 250), 'This certifies that', fill='#4B5563', anchor='mm', font=font_small)
+    draw.text((width/2, 300), name, fill='#1F2937', anchor='mm', font=font_medium)
+    draw.text((width/2, 350), 'has successfully completed', fill='#4B5563', anchor='mm', font=font_small)
+    draw.text((width/2, 400), session_name, fill='#1F2937', anchor='mm', font=font_medium)
+    draw.text((width/2, 500), f'Date: {date}', fill='#4B5563', anchor='mm', font=font_small)
     
     # Save to BytesIO object
     img_io = BytesIO()
-    image.save(img_io, 'PNG')
+    image.save(img_io, 'PNG', quality=95)
     img_io.seek(0)
     return img_io
 
@@ -198,8 +210,13 @@ def register():
     if name and email and session:
         participant_id = add_participant(name, email, session)
         session_price = get_session_price(session)
-        add_payment(participant_id, session_price)
-        return redirect(url_for('success', participant_id=participant_id))
+        if session_price > 0:
+            add_payment(participant_id, session_price)
+            return redirect(url_for('success', participant_id=participant_id))
+        else:
+            flash('Error processing payment. Please try again.', 'error')
+    else:
+        flash('Please fill in all required fields.', 'error')
     
     return redirect(url_for('index'))
 
@@ -218,7 +235,6 @@ def success(participant_id):
 @app.route('/participants')
 def participants():
     all_participants = get_participants()
-    # Add payment information to each participant
     for participant in all_participants:
         payment = get_participant_payment(participant['id'])
         participant['payment'] = payment
@@ -270,7 +286,8 @@ def certificate(participant_id):
             as_attachment=True,
             download_name=f"certificate_{participant['name'].lower().replace(' ', '_')}.png"
         )
-    return redirect(url_for('index'))
+    flash('Certificate not available. Please ensure payment is completed.', 'error')
+    return redirect(url_for('participants'))
 
 if __name__ == '__main__':
     app.run(debug=True)
